@@ -33,7 +33,9 @@ func (s *MemoryURLStore) Create(url domain.URL) (domain.URL, error) {
 	if _, exists := s.urls[url.Code]; exists {
 		return domain.URL{}, ErrCodeAlreadyExists
 	}
-	url.CreatedAt = time.Now().UTC()
+	if url.CreatedAt.IsZero() {
+		url.CreatedAt = time.Now().UTC()
+	}
 	s.urls[url.Code] = url
 	return url, nil
 }

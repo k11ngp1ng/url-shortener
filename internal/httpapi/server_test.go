@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/k11ngp1ng/url-shortener-go/internal/domain"
 	"github.com/k11ngp1ng/url-shortener-go/internal/httpapi"
 	"github.com/k11ngp1ng/url-shortener-go/internal/store"
 )
@@ -82,5 +84,33 @@ func TestRedirectIncrementsClicks(t *testing.T) {
 	_ = json.NewDecoder(metricsResponse.Body).Decode(&metrics)
 	if metrics.Clicks != 1 {
 		t.Fatalf("expected 1 click, got %d", metrics.Clicks)
+	}
+}
+
+func TestExpiredLinkReturnsGoneWithoutClick(t *testing.T) {
+	urlStore := store.NewMemoryURLStore()
+	past := time.Now().Add(-time.Minute)
+	if _, err := urlStore.Create(domain.URL{Code: "expired", OriginalURL: "https://go.dev", ExpiresAt: &past}); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	httpapi.NewServer(urlStore).Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/expired", nil))
+	if response.Code != http.StatusGone {
+		t.Fatalf("expected %d, got %d", http.StatusGone, response.Code)
+	}
+	url, _ := urlStore.Get("expired")
+	if url.Clicks != 0 {
+		t.Fatalf("expired link should not gain clicks, got %d", url.Clicks)
+	}
+}
+
+func TestRateLimit(t *testing.T) {
+	server := httpapi.NewServer(store.NewMemoryURLStore()).WithRateLimit(1, time.Minute).Routes()
+	first := httptest.NewRecorder()
+	server.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/unknown", nil))
+	second := httptest.NewRecorder()
+	server.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/another", nil))
+	if second.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected %d, got %d", http.StatusTooManyRequests, second.Code)
 	}
 }

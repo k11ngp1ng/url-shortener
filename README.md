@@ -2,73 +2,56 @@
 
 API REST em Go para criar links curtos, redirecionar acessos e consultar métricas básicas.
 
-> Projeto construído como parte de uma trilha pública de estudos focada em backend, APIs, testes e práticas de engenharia.
-
-## Escopo da primeira versão
-
-- Criar uma URL curta a partir de uma URL de destino.
-- Redirecionar acessos por meio do código curto.
-- Consultar a quantidade de acessos de cada link.
-- Validar URLs e impedir códigos duplicados.
-- Cobrir os fluxos principais com testes automatizados.
-
-Nesta primeira etapa os dados ficam em memória para manter o ciclo de desenvolvimento rápido. PostgreSQL, Docker e persistência entram na próxima etapa, sem alterar o contrato HTTP.
-
 ## Endpoints
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
-| `POST` | `/api/v1/urls` | Cria uma URL curta |
-| `GET` | `/{code}` | Redireciona para a URL original |
-| `GET` | `/api/v1/urls/{code}` | Retorna dados e total de acessos |
-| `GET` | `/health` | Verifica a saúde da API |
+| `POST` | `/api/v1/urls` | Cria uma URL curta. |
+| `GET` | `/{code}` | Redireciona para a URL original. |
+| `GET` | `/api/v1/urls/{code}` | Retorna dados e total de acessos. |
+| `GET` | `/health` | Verifica API e banco configurado. |
+| `GET` | `/metrics` | Métricas no formato Prometheus. |
 
 ## Exemplo
-
-Crie um link:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/urls \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://go.dev"}'
+  -d '{"url":"https://go.dev","expires_at":"2030-01-01T00:00:00Z"}'
 ```
 
-Resposta esperada:
-
-```json
-{
-  "code": "a1b2c3",
-  "short_url": "http://localhost:8080/a1b2c3",
-  "original_url": "https://go.dev",
-  "clicks": 0
-}
-```
+`expires_at` é opcional e deve estar no futuro, em RFC 3339. Após expirar, o redirecionamento responde `410 Gone` e não contabiliza acessos.
 
 ## Executar localmente
 
-Pré-requisito: Go instalado.
+Pré-requisito: Go 1.23+.
 
 ```bash
 go run ./cmd/api
-```
-
-Em outro terminal:
-
-```bash
 go test ./...
 ```
 
-## Próximas evoluções
+Sem `DATABASE_URL`, a API usa armazenamento em memória — adequado apenas para desenvolvimento e testes.
 
-- [ ] PostgreSQL e migrations.
-- [ ] Docker Compose para API e banco.
-- [ ] Expiração de links.
-- [ ] Rate limiting.
-- [ ] Observabilidade e CI com GitHub Actions.
+## Docker e PostgreSQL
 
-## Aprendizados trabalhados
+```bash
+docker compose up --build
+```
 
-- Design de API HTTP com a biblioteca padrão do Go.
-- Separação entre domínio, armazenamento e handlers.
-- Concorrência segura com `sync.RWMutex`.
-- Testes de unidade e integração de rotas.
+O serviço `migrate` aplica os arquivos versionados em `migrations/` antes da API iniciar. Para apagar o banco local e iniciar de novo: `docker compose down -v`.
+
+## Configuração
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `PORT` | `8080` | Porta HTTP da API. |
+| `DATABASE_URL` | vazia | String de conexão PostgreSQL; habilita persistência. |
+| `RATE_LIMIT_PER_MINUTE` | `60` | Máximo de requisições por IP por minuto; `0` desabilita. |
+
+## Recursos de produção
+
+- PostgreSQL com migrations SQL versionadas.
+- Rate limit em memória por IP, com resposta `429` e `Retry-After`.
+- Logs estruturados, `/health` e `/metrics`.
+- CI em GitHub Actions: `go vet`, testes com detector de corrida e build da imagem Docker.
